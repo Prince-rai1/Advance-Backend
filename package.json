@@ -1,0 +1,12 @@
+{
+  "name": "advance-backend",
+  "version": "1.0.0",
+  "description": "designing a advance backend for an application similar to youtube",
+  "license": "ISC",
+  "author": "Prince Kumar Rai",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
