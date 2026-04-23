@@ -96,15 +96,15 @@ const loginUser = asyncHandler(async (req, res) => {
     };
 
     res.status(200)
-       .cookie("refreshToken", refreshToken, {
+        .cookie("refreshToken", refreshToken, {
             ...options,
             maxAge: 7 * 24 * 60 * 60 * 1000,
         })
-       .cookie("accessToken", accessToken, {
+        .cookie("accessToken", accessToken, {
             ...options,
             maxAge: 15 * 60 * 1000,
         })
-       .json(
+        .json(
             new apiResponse(200, "User Logged in successfully", {
                 user: {
                     _id: user._id,
@@ -134,7 +134,8 @@ const logoutUser = asyncHandler(async (req, res) => {
 });
 
 const refreshAccessToken = asyncHandler(async (req, res) => {
-    const incompleteRefreshToken = req.cookies.refreshToken || req.body.refreshToken;
+    const incompleteRefreshToken =
+        req.cookies.refreshToken || req.body.refreshToken;
 
     if (!incompleteRefreshToken) {
         throw new apiError(401, "Unauthorized request");
@@ -155,24 +156,146 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
         throw new apiError(401, "Refresh token is expired or used");
     }
 
-    const accessToken = user.generateAccessToken()
-    const refreshToken = user.generateRefreshToken()
+    const accessToken = user.generateAccessToken();
+    const refreshToken = user.generateRefreshToken();
 
-    user.refreshToken = refreshToken 
+    user.refreshToken = refreshToken;
 
-    await user.save({ validateBeforeSave: false })
+    await user.save({ validateBeforeSave: false });
 
     const options = {
-        httpOnly : true,
-        secure : true
-    }
+        httpOnly: true,
+        secure: true,
+    };
 
     res.status(200)
-    .cookie("accessToken", accessToken, {...options, maxAge : 15 * 60 * 1000})
-    .cookie("refreshToken", refreshToken, {...options, maxAge : 7 * 24 * 60 * 60 * 1000})
-    .json(
-        new apiResponse(200, "Access token refreshed successfully")
-    )
+        .cookie("accessToken", accessToken, {
+            ...options,
+            maxAge: 15 * 60 * 1000,
+        })
+        .cookie("refreshToken", refreshToken, {
+            ...options,
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+        })
+        .json(new apiResponse(200, "Access token refreshed successfully"));
 });
 
-export { registerUser, loginUser, logoutUser, refreshAccessToken };
+const changeCurrentPassword = asyncHandler(async (req, res) => {
+    const { oldPasswrod, newPassword } = req.body;
+
+    const user = await User.findById(req.user?._id);
+
+    const isPasswordCorrect = await user.isPasswordCorrect(oldPasswrod);
+
+    if (!isPasswordCorrect) {
+        throw new apiError(400, "Invalid Password");
+    }
+
+    user.password = newPassword;
+
+    await user.save({ validateBeforeSave: false });
+
+    res.status(200).json(new apiResponse(200, "Password changed successfully"));
+});
+
+const getCurrentUser = asyncHandler(async (req, res) => {
+    res.status(200).json(
+        new apiResponse(200, req.user, "Current user fetched successfully")
+    );
+});
+
+const updateDetails = asyncHandler(async (req, res) => {
+    const { fullname, email, username } = req.body;
+
+    const updatedDetails = {};
+
+    if (!fullname.trim()) updatedDetails.fullname = fullname.trim();
+    if (!email.trim()) updatedDetails.email = email.trim();
+    if (!username.trim()) updatedDetails.username = username.trim();
+
+    if (Object.keys(updateFields).length === 0) {
+        throw new apiError(400, "At least one valid field is required");
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+        req.user?._id,
+        {
+            $set: updatedDetails,
+        },
+        {
+            new: true,
+        }
+    ).select("-password -refreshtoken");
+
+    res.status(200).json(
+        new apiResponse(200, updatedUser, "User details updated successfully")
+    );
+});
+
+const updateAvatar = asyncHandler(async (req, res) => {
+    const avatarPath = req.file?.avatar[0]?.path;
+
+    if (!avatarPath) {
+        throw new apiError(400, "Avatar is required");
+    }
+
+    const avatar = await uploadOnCloudinary(avatarPath);
+
+    const updatedUser = await User.findByIdAndUpdate(
+        req.user?._id,
+        {
+            $set: {
+                avatar: avatar.secure_url,
+            },
+        },
+        {
+            new: true,
+        }
+    ).select("-password -refreshtoken");
+
+    res.status(200).json(
+        new apiResponse(200, updatedUser, "User avatar updated successfully")
+    );
+});
+
+const updateCoverImage = asyncHandler(async (req, res) => {
+    const coveImagePath = req.file?.coverImage[0]?.path;
+
+    if (!coveImagePath) {
+        throw new apiError(400, "Cover image is required");
+    }
+
+    const coverImage = await uploadOnCloudinary(coveImagePath);
+
+    const updatedUser = await User.findByIdAndUpdate(
+        req.user?._id,
+        {
+            $set: {
+                coverImage: coverImage.secure_url,
+            },
+        },
+        {
+            new: true,
+        }
+    ).select("-password -refreshtoken");
+
+    res.status(200).json(
+        new apiResponse(
+            200,
+            updatedUser,
+            "User cover image updated successfully"
+        )
+    );
+});
+
+export {
+    registerUser,
+    loginUser,
+    logoutUser,
+    refreshAccessToken,
+    getCurrentUser,
+    changeCurrentPassword,
+    updateDetails,
+    updateAvatar,
+    updateCoverImage,
+};
