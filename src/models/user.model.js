@@ -30,10 +30,12 @@ const userSchema = mongoose.Schema(
         coverimage: {
             type: String,
         },
-        watchhistory: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "Video",
-        },
+        watchhistory: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "Video",
+            }
+        ],
         password: {
             type: String,
             required: [true, "password is required"],
@@ -48,10 +50,9 @@ const userSchema = mongoose.Schema(
     }
 );
 
-userSchema.pre("save", async function (next) {
+userSchema.pre("save", async function () {
     if (this.isModified("password")) {
         this.password = await bcrypt.hash(this.password, 10);
-        next();
     }
 });
 
