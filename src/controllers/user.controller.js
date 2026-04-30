@@ -1,9 +1,9 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { apiError } from "../utils/apiError.js";
 import { User } from "../models/user.model.js";
-import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import { uploadOnCloudinary, deleteFromCloudinary } from "../utils/cloudinary.js";
 import apiResponse from "../utils/apiResponse.js";
-import { JsonWebToken } from "jsonwebtoken";
+import jsonwebtoken from "jsonwebtoken";
 
 const registerUser = asyncHandler(async (req, res) => {
     const { username, fullname, password, email } = req.body;
@@ -45,8 +45,14 @@ const registerUser = asyncHandler(async (req, res) => {
         fullname,
         email,
         password,
-        avatar: avatar.secure_url,
-        coverimage: coverImage?.secure_url || "",
+        avatar: {
+            url: avatar.secure_url,
+            public_id: avatar.public_id,
+        },
+        coverimage: {
+            url: coverImage?.secure_url,
+            public_id: coverImage?.public_id,
+        },
     });
 
     if (!newUser) {
@@ -141,7 +147,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
         throw new apiError(401, "Unauthorized request");
     }
 
-    const decodedToken = JsonWebToken.verify(
+    const decodedToken = jsonwebtoken.verify(
         incompleteRefreshToken,
         process.env.REFRESH_TOKEN_SCERET
     );
@@ -233,7 +239,17 @@ const updateDetails = asyncHandler(async (req, res) => {
 });
 
 const updateAvatar = asyncHandler(async (req, res) => {
-    const avatarPath = req.file?.avatar[0]?.path;
+
+    console.log(req.file)
+    const avatarPath = req.file?.path;
+
+    const user = await User.findById(req.user?._id);
+
+    const oldAvatarPublicId = user?.avatar?.public_id;
+
+    if (!oldAvatarPublicId.trim()) {
+        throw new apiError(400, "User does not have an avatar to update");
+    }
 
     if (!avatarPath) {
         throw new apiError(400, "Avatar is required");
@@ -245,13 +261,18 @@ const updateAvatar = asyncHandler(async (req, res) => {
         req.user?._id,
         {
             $set: {
-                avatar: avatar.secure_url,
+                avatar: {
+                    url: avatar.secure_url,
+                    public_id: avatar.public_id,
+                },
             },
         },
         {
             new: true,
         }
     ).select("-password -refreshtoken");
+
+    await deleteFromCloudinary(oldAvatarPublicId);
 
     res.status(200).json(
         new apiResponse(200, updatedUser, "User avatar updated successfully")
@@ -260,6 +281,14 @@ const updateAvatar = asyncHandler(async (req, res) => {
 
 const updateCoverImage = asyncHandler(async (req, res) => {
     const coveImagePath = req.file?.coverImage[0]?.path;
+
+    const user = await User.findById(req.user?._id);
+
+    const oldCoverImagePublicId = user?.coverimage?.public_id;
+
+    if (!oldCoverImagePublicId.trim()) {
+        throw new apiError(400, "User does not have a cover image to update");
+    }
 
     if (!coveImagePath) {
         throw new apiError(400, "Cover image is required");
@@ -279,6 +308,8 @@ const updateCoverImage = asyncHandler(async (req, res) => {
         }
     ).select("-password -refreshtoken");
 
+    await deleteFromCloudinary(oldCoverImagePublicId);
+
     res.status(200).json(
         new apiResponse(
             200,
@@ -287,6 +318,77 @@ const updateCoverImage = asyncHandler(async (req, res) => {
         )
     );
 });
+
+const getUserChannelProfile = asyncHandler(async (req, res) => {
+    const {username} = req.params;
+
+    if(!username?.trim){
+        throw new apiError(404, "Username is missing");
+    }
+
+    // User.find({username})
+    const channel = await User.aggregate([
+        {
+            $match : {
+                username : username
+            }
+        },
+        {
+            $lookup : {
+                from : "subscriptons",
+                localField : "_id",
+                foreignField : "channel",
+                as : "subscribers"
+            }
+        },
+        {
+            $lookup : {
+                from : "subscriptons",
+                localField : "_id",
+                foreignField : "subscriber",
+                as : "subscribed"
+            }
+        },
+        {
+            $addFields : {
+                subscribers : {
+                    $size : "$subscribers"
+                },
+                subscribed : {
+                    $size : "$subscribed"
+                },
+                isSubscribed : {
+                    $cond : {
+                        if : { $in: [req.user?._id, "$subscribers.subscriber"] },
+                        then : true,
+                        else : false
+                    }
+                }
+            }
+        },
+        {
+            $project : {
+                fullname : 1,
+                username : 1,
+                subscribers : 1,
+                isSubscribed : 1,
+                subscribed : 1,
+                avatar : 1,
+                coverImage : 1,
+                email : 1
+            }
+        }
+
+    ])
+
+    console.log(channel)
+
+    res
+    .status(200)
+    .json(
+        new apiResponse(200,channel, "User channel fetched successfully")
+    )
+})
 
 export {
     registerUser,
