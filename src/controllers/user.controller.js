@@ -1,9 +1,13 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { apiError } from "../utils/apiError.js";
 import { User } from "../models/user.model.js";
-import { uploadOnCloudinary, deleteFromCloudinary } from "../utils/cloudinary.js";
+import {
+    uploadOnCloudinary,
+    deleteFromCloudinary,
+} from "../utils/cloudinary.js";
 import apiResponse from "../utils/apiResponse.js";
 import jsonwebtoken from "jsonwebtoken";
+import mongoose from "mongoose";
 
 const registerUser = asyncHandler(async (req, res) => {
     const { username, fullname, password, email } = req.body;
@@ -239,8 +243,7 @@ const updateDetails = asyncHandler(async (req, res) => {
 });
 
 const updateAvatar = asyncHandler(async (req, res) => {
-
-    console.log(req.file)
+    console.log(req.file);
     const avatarPath = req.file?.path;
 
     const user = await User.findById(req.user?._id);
@@ -320,75 +323,122 @@ const updateCoverImage = asyncHandler(async (req, res) => {
 });
 
 const getUserChannelProfile = asyncHandler(async (req, res) => {
-    const {username} = req.params;
+    const { username } = req.params;
 
-    if(!username?.trim){
+    if (!username?.trim) {
         throw new apiError(404, "Username is missing");
     }
 
     // User.find({username})
     const channel = await User.aggregate([
         {
-            $match : {
-                username : username
-            }
+            $match: {
+                username: username,
+            },
         },
         {
-            $lookup : {
-                from : "subscriptons",
-                localField : "_id",
-                foreignField : "channel",
-                as : "subscribers"
-            }
+            $lookup: {
+                from: "subscriptons",
+                localField: "_id",
+                foreignField: "channel",
+                as: "subscribers",
+            },
         },
         {
-            $lookup : {
-                from : "subscriptons",
-                localField : "_id",
-                foreignField : "subscriber",
-                as : "subscribed"
-            }
+            $lookup: {
+                from: "subscriptons",
+                localField: "_id",
+                foreignField: "subscriber",
+                as: "subscribed",
+            },
         },
         {
-            $addFields : {
-                subscribers : {
-                    $size : "$subscribers"
+            $addFields: {
+                subscribers: {
+                    $size: "$subscribers",
                 },
-                subscribed : {
-                    $size : "$subscribed"
+                subscribed: {
+                    $size: "$subscribed",
                 },
-                isSubscribed : {
-                    $cond : {
-                        if : { $in: [req.user?._id, "$subscribers.subscriber"] },
-                        then : true,
-                        else : false
-                    }
-                }
-            }
+                isSubscribed: {
+                    $cond: {
+                        if: { $in: [req.user?._id, "$subscribers.subscriber"] },
+                        then: true,
+                        else: false,
+                    },
+                },
+            },
         },
         {
-            $project : {
-                fullname : 1,
-                username : 1,
-                subscribers : 1,
-                isSubscribed : 1,
-                subscribed : 1,
-                avatar : 1,
-                coverImage : 1,
-                email : 1
-            }
-        }
+            $project: {
+                fullname: 1,
+                username: 1,
+                subscribers: 1,
+                isSubscribed: 1,
+                subscribed: 1,
+                avatar: 1,
+                coverImage: 1,
+                email: 1,
+            },
+        },
+    ]);
 
-    ])
+    console.log(channel);
 
-    console.log(channel)
+    res.status(200).json(
+        new apiResponse(200, channel, "User channel fetched successfully")
+    );
+});
 
-    res
-    .status(200)
-    .json(
-        new apiResponse(200,channel, "User channel fetched successfully")
-    )
-})
+const getWatchHistory = asyncHandler(async (req, res) => {
+    const user = await User.aggregate([
+        {
+            $match: {
+                _id: new mongoose.Types.ObjectId(req.user._id),
+            },
+        },
+        {
+            $lookup: {
+                from: "videos",
+                localfield: "watchhistory",
+                foreignField: "_id",
+                as: "watchhistory",
+                pipeline: [
+                    {
+                        $lookup: {
+                            from: "users",
+                            localfield: "owner",
+                            foreignField: "_id",
+                            as: "owner",
+                            pipeline: {
+                                $project: {
+                                    fullname: 1,
+                                    username: 1,
+                                    avatar: 1,
+                                },
+                            },
+                        },
+                    },
+                    {
+                        $addFields: {
+                            owner: {
+                                $first: "$owner",
+                            },
+                        },
+                    },
+                ],
+            },
+        },
+    ]);
+
+    res.status(200).json(
+        new apiResponse(
+            200,
+            user[0].watchhistory,
+            "watch history fetched successfully"
+        )
+    );
+});
 
 export {
     registerUser,
@@ -400,4 +450,6 @@ export {
     updateDetails,
     updateAvatar,
     updateCoverImage,
+    getUserChannelProfile,
+    getWatchHistory
 };
